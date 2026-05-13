@@ -1,0 +1,166 @@
+from rest_framework import serializers
+from .models import User,ClinicalCounsellorProfile,FinancialCounsellorProfile, EmbryologistProfile,AnesthesiologistProfile,NurseProfile,ReceptionistProfile, AdminProfile
+from adv_reproduction.models import ReproductiveEndocrinologistProfile
+from pharmacy.models import PharmacistProfile
+from lab.models import LabTechnicianProfile,AndrologyLabTechnician
+from hr.models import  HRManagerProfile
+from gynaecology.models import GynaecologistProfile
+from adv_reproduction.models import ReproductiveEndocrinologistProfile
+from departments.views import auto_assign_primary
+from departments.models import Department,StaffDepartmentAssignment
+
+# from patients.models import PatientProfile
+# from donor.models import DonorProfile
+
+class LoginSerializer(serializers.Serializer):
+    email=serializers.EmailField()
+    password=serializers.CharField(write_only=True)
+
+#nested profile serializers
+
+class ReceptionistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model= ReceptionistProfile
+        fields=[
+            'can_register_patient','can_access_billing','can_modify_patient_records','can_schedule_appointment','is_department_head'
+        ]
+class ClinicalCounsellorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=ClinicalCounsellorProfile
+        fields=['is_department_head']
+
+class FinancialCounsellorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=FinancialCounsellorProfile
+        fields=['can_approve_discounts','can_override_insurance','is_department_head']
+
+class ReproductiveEndocrinologistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=ReproductiveEndocrinologistProfile
+        fields=['can_perform_egg_retrieval','can_perform_embryo_transfer','can_design_ivf_protocols','is_department_head']
+
+class GynaecologistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=GynaecologistProfile
+        fields=['can_perform_egg_retrieval','can_assist_ivf','is_department_head']
+
+class AnesthesiologistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=AnesthesiologistProfile
+        fields=['edit_anesthesia_records','is_department_head']
+
+class EmbryologistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=EmbryologistProfile
+        fields=['can_perform_icsi','is_department_head']
+
+class NurseProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=NurseProfile
+        fields=['is_head_nurse','is_department_head']
+
+class PharmacistProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=PharmacistProfile
+        fields=['can_manage_inventory','is_department_head']
+
+class LabTechnicianProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=LabTechnicianProfile
+        fields=['is_department_head']
+
+class AndrologyLabTechnicianSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=AndrologyLabTechnician
+        fields=['can_perform_dna_frag','can_perform_cryo','is_department_head']
+
+class HRManagerProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=HRManagerProfile
+        fields=['can_approve_leaves','can_view_salaries','can_terminate_staff','can_edit_attendance','can_generate_payslips','can_update_documents','is_department_head']
+
+class AdminUserCreateSerializer(serializers.ModelSerializer):
+    secondary_department_id=serializers.IntegerField(write_only=True,required=False,allow_null=True)
+    department_info=serializers.SerializerMethodField(read_only=True)
+    #nested profile fields
+    receptionist_profile=ReceptionistProfileSerializer(read_only=True)
+    clinical_counsellor_profile=ClinicalCounsellorProfileSerializer(read_only=True)
+    financial_counsellor_profile=FinancialCounsellorProfileSerializer(read_only=True)
+    reproductive_endocrinologist_profile=ReproductiveEndocrinologistProfileSerializer(read_only=True)
+    gynaecologist_profile=GynaecologistProfileSerializer(read_only=True)
+    anesthesiologist_profile=AnesthesiologistProfileSerializer(read_only=True)
+    embryologist_profile=EmbryologistProfileSerializer(read_only=True)
+    nurse_profile=NurseProfileSerializer(read_only=True)
+    pharmacist_profile=PharmacistProfileSerializer(read_only=True)
+    lab_technician_profile=LabTechnicianProfileSerializer(read_only=True)
+    andrology_lab_technician_profile=AndrologyLabTechnicianSerializer(read_only=True)
+    hr_profile=HRManagerProfileSerializer(read_only=True)
+
+    class Meta:
+        model=User
+        fields = ['id','email','full_name','role','password','is_active','date_joined','secondary_department_id','department_info',
+        #nested_profiles
+        'receptionist_profile','clinical_counsellor_profile','financial_counsellor_profile','reproductive_endocrinologist_profile','gynaecologist_profile','anesthesiologist_profile','embryologist_profile','nurse_profile','pharmacist_profile','lab_technician_profile','andrology_lab_technician_profile','hr_profile',
+        ]
+        extra_kwargs={'password':{'write_only':True}}
+    def get_department_info(self,obj):
+        assignments=obj.staff_assignments.filter(is_active=True).select_related('department')
+        return[
+            {
+                'id': a.department.id,
+                'name': a.department.name,
+                'code': a.department.code,
+                'role_in_dept': a.role_in_dept,
+            }
+            for a in assignments
+        ]
+
+    def create(self, validated_data):
+        secondary_department_id=validated_data.pop('secondary_department_id',None)
+        password = validated_data.pop('password')
+        user = User.objects.create_user(password=password, **validated_data)
+        auto_assign_primary(user)
+        if secondary_department_id:
+            try:
+                dept=Department.objects.get(id=secondary_department_id)
+                StaffDepartmentAssignment.objects.get_or_create(
+                    user=user,
+                    department=dept,
+                    defaults={'role_in_dept':'SECONDARY',
+                              'unit': validated_data.get('secondary_unit','')},
+                )
+            except Exception:
+                pass
+        return user
+                
+        
+        # if user.role =='REC':
+        #     ReceptionistProfile.objects.create(user=user)
+        # elif user.role =='CCO':
+        #     ClinicalCounsellorProfile.objects.create(user=user)
+        # elif user.role =='FCO':
+        #     FinancialCounsellorProfile.objects.create(user=user)
+        # elif user.role =='END':
+        #     ReproductiveEndocrinologistProfile.objects.create(user=user)
+        # elif user.role =='GYN':
+        #     GynaecologistProfile.objects.create(user=user)
+        # elif user.role =='EMB':
+        #     EmbryologistProfile.objects.create(user=user)
+        # elif user.role =='ANE':
+        #     AnesthesiologistProfile.objects.create(user=user)
+        # elif user.role =='NUR':
+        #     NurseProfile.objects.create(user=user)
+        # elif user.role =='PHA':
+        #     PharmacistProfile.objects.create(user=user)
+        # elif user.role =='TEC':
+        #     LabTechnicianProfile.objects.create(user=user)
+        # elif user.role =='AND':
+        #     AndrologyLabTechnician.objects.create(user=user)
+        # # elif user.role =='PAT':
+        # #     PatientProfile.objects.create(user=user)
+        # elif user.role == 'HRM':
+        #     HRManagerProfile.objects.create(user=user)
+        # elif user.role=='ADM':
+        #     AdminProfile.objects.create(user=user)
+
+        # return user 
