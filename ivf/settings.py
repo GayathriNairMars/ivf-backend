@@ -161,7 +161,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'https://ivf-backend-ki9p.onrender.com',
-    #vercel frontend link
+    'https://ivf-frontend.vercel.app'
 ]
 # CSRF_COOKIE_SECURE = True  
 
@@ -193,7 +193,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CORS_ALLOWED_ORIGINS=[
 	"http://localhost:5173",
     'http://127.0.0.1:5173',
-    "https://your-react-app-url.vercel.app",
+    "https://ivf-frontend.vercel.app/",
     "http://localhost:3000",
 ]
 
