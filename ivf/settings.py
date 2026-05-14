@@ -193,7 +193,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CORS_ALLOWED_ORIGINS=[
 	"http://localhost:5173",
     'http://127.0.0.1:5173',
-    "https://ivf-frontend.vercel.app/",
+    "https://ivf-frontend.vercel.app",
     "http://localhost:3000",
 ]
 
