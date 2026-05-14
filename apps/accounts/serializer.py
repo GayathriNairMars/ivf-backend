@@ -86,21 +86,21 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
     receptionist_profile=ReceptionistProfileSerializer(read_only=True)
     clinical_counsellor_profile=ClinicalCounsellorProfileSerializer(read_only=True)
     financial_counsellor_profile=FinancialCounsellorProfileSerializer(read_only=True)
-    reproductive_endocrinologist_profile=ReproductiveEndocrinologistProfileSerializer(read_only=True)
-    gynaecologist_profile=GynaecologistProfileSerializer(read_only=True)
-    anesthesiologist_profile=AnesthesiologistProfileSerializer(read_only=True)
+    endocrinologist_profile=ReproductiveEndocrinologistProfileSerializer(read_only=True)
+    gynaec_profile=GynaecologistProfileSerializer(read_only=True)
+    anesth_profile=AnesthesiologistProfileSerializer(read_only=True)
     embryologist_profile=EmbryologistProfileSerializer(read_only=True)
     nurse_profile=NurseProfileSerializer(read_only=True)
     pharmacist_profile=PharmacistProfileSerializer(read_only=True)
-    lab_technician_profile=LabTechnicianProfileSerializer(read_only=True)
-    andrology_lab_technician_profile=AndrologyLabTechnicianSerializer(read_only=True)
+    technician_profile=LabTechnicianProfileSerializer(read_only=True)
+    andrology_technician_profile=AndrologyLabTechnicianSerializer(read_only=True)
     hr_profile=HRManagerProfileSerializer(read_only=True)
 
     class Meta:
         model=User
         fields = ['id','email','full_name','role','password','is_active','date_joined','secondary_department_id','department_info',
         #nested_profiles
-        'receptionist_profile','clinical_counsellor_profile','financial_counsellor_profile','reproductive_endocrinologist_profile','gynaecologist_profile','anesthesiologist_profile','embryologist_profile','nurse_profile','pharmacist_profile','lab_technician_profile','andrology_lab_technician_profile','hr_profile',
+        'receptionist_profile','clinical_counsellor_profile','financial_counsellor_profile','endocrinologist_profile','gynaec_profile','anesth_profile','embryologist_profile','nurse_profile','pharmacist_profile','technician_profile','andrology_technician_profile','hr_profile',
         ]
         extra_kwargs={'password':{'write_only':True}}
     def get_department_info(self,obj):
