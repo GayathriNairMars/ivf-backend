@@ -114,7 +114,7 @@ class ClinicLoginView(APIView):
             return Response({'detail':'This account has been deactivated. Contact your administrator.'}, status=status.HTTP_403_FORBIDDEN)
         
         login(request,user)
-        
+
         LoginAuditLog.objects.filter(
             user=user,
             is_active_session=True
@@ -601,7 +601,7 @@ class StaffManagementViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='dashboard')
     def dashboard(self, request):
         staff_count = User.objects.exclude(role__in=['PAT', 'DON']).count()
-        cutoff=timezone.now() -timedelta(seconds=60)
+        cutoff=timezone.now() -timedelta(minutes=5)
         patient_today_count=User.objects.filter(role='PAT',date_joined__date=timezone.now().date()).count()
         raw_logs=(LoginAuditLog.objects
             .filter(
@@ -620,7 +620,7 @@ class StaffManagementViewSet(viewsets.ModelViewSet):
             'user__email':log.user.email,
             'user__role':log.user.role,
             'login_time':log.login_time.isoformat() if log.login_time else None,
-        } for log in raw_logs
+        } for log in seen.values()
         ][:20]
         new_patients=User.objects.filter(role='PAT',date_joined__date=timezone.now().date()).order_by('-date_joined').values('full_name', 'email', 'date_joined')[:20]
         
