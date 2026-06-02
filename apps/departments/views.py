@@ -210,74 +210,180 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 	#GET /api/departments/<id>/assignments
 	@action(detail=True, methods=['get'],url_path='assignments')
 	def assignments(self,request,pk=None):
-		department=self.get_object()
+        department=self.get_object()
 		assignments=StaffDepartmentAssignment.objects.filter(department=department).select_related('user').order_by('-assigned_on')
+        if not user_id:
+            return Response({'detail': 'user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        existing = StaffDepartmentAssignment.objects.filter(user=user, department=department).first()
+        if existing:
+            existing.role_in_dept = role
+            existing.is_active = True
+            existing.notes = notes
+            existing.assigned_until = until
+            existing.save()
+            msg = "Assignment updated"
+        else:
+            StaffDepartmentAssignment.objects.create(
+                user=user,
+                department=department,
+                role_in_dept=role,
+                notes=notes,
+                assigned_until=until
+            )
+            msg = "Staff Assigned to department"
+        return Response({'detail': msg, 'department': department.name, 'user': user.full_name})
 
-		serializer=DepartmentStaffSerializer(assignments,many=True)
-		return Response(serializer.data)
+    # POST /api/departments/remove/
+    @action(detail=True, methods=['post'], url_path='remove-staff')
+    def remove_staff(self, request, pk=None):
+        department = self.get_object()
+        user_id = request.data.get('user_id')
+        updated = StaffDepartmentAssignment.objects.filter(
+            department=department,
+            user_id=user_id,
+        ).update(is_active=False)
+        if updated:
+            return Response({'detail': 'Staff removed from department'})
+        return Response({'detail': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
 
-	@action(detail=True,methods=['post'],url_path='set-head')
-	def set_head(self, request, pk=None):
-		dept = self.get_object()
-		staff_id = request.data.get('staff_id')
+    # POST /api/departments/transfer
+    @action(detail=False, methods=['post'], url_path='transfer')
+    def transfer(self, request):
+        user_id = request.data.get('user_id')
+        to_dept_id = request.data.get('to_department_id')
+        notes = request.data.get('notes', '')
+        if not user_id or not to_dept_id:
+            return Response({'detail': 'user_id and to_department_id are required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id)
+            to_dept = Department.objects.get(id=to_dept_id)
+        except (User.DoesNotExist, Department.DoesNotExist):
+            return Response({'detail': 'User or department not found.'}, status=status.HTTP_404_NOT_FOUND)
+        existing = StaffDepartmentAssignment.objects.filter(user=user, department=to_dept).first()
+
+        if existing:
+            existing.role_in_dept = 'PRIMARY'
+            existing.is_active = True
+            existing.notes = notes
+            existing.save()
+        else:
+            StaffDepartmentAssignment.objects.create(
+                user=user,
+                department=to_dept,
+                role_in_dept='PRIMARY',
+                notes=notes,
+            )
+        return Response({
+            'detail': f"{user.full_name} transferred to {to_dept.name} as PRIMARY",
+        })
+
+    # POST /api/departments/<id>/toggle-status/
+    @action(detail=True, methods=['post'], url_path='toggle-status')
+    def toggle_status(self, request, pk=None):
+        department = self.get_object()
+        department.is_active = not department.is_active
+        department.save()
+        return Response({
+            'id': department.id,
+            'is_active': department.is_active,
+            'message': f"Department {'activated' if department.is_active else 'deactivated'}.",
+        })
+
+    # POST /api/departments/seed/
+    @action(detail=False, methods=['post'], url_path='seed')
+    def seed(self, request):
+        created = []
+        existing = []
+
+        for dept in DEFAULT_DEPARTMENTS:
+            _, was_created = Department.objects.get_or_create(
+                code=dept['code'],
+                defaults={
+                    'name': dept['name'],
+                    'description': dept.get('description', ''),
+                },
+            )
+            (created if was_created else existing).append(dept['name'])
+        return Response({
+            'created': created,
+            'existing': existing,
+            'message': f"{len(created)} departments created, {len(existing)} already existed."
+        })
+
+    # GET /api/departments/<id>/assignments
+    @action(detail=True, methods=['get'], url_path='assignments')
+    def assignments(self, request, pk=None):
+        department = self.get_object()
+        assignments = StaffDepartmentAssignment.objects.filter(department=department).select_related('user').order_by('-assigned_on')
+        serializer = DepartmentStaffSerializer(assignments, many=True)
+        return Response(serializer.data)
+    @action(detail=True,methods=['post'],url_path='set-head')
+    def set_head(self, request, pk=None):
+        dept = self.get_object()
+        staff_id = request.data.get('staff_id')
     # --- Clear head ---
-		if not staff_id:
-			if dept.head:
-				self._clear_hod_flag(dept.head)
-				dept.head = None
-				dept.save()
-				return Response({'detail': 'Department head removed.'})
-		try:
-			new_head = User.objects.get(id=staff_id)
-		except User.DoesNotExist:
-			return Response({'detail': 'Staff not found.'}, status=status.HTTP_404_NOT_FOUND)
-		is_primary = StaffDepartmentAssignment.objects.filter(
+        if not staff_id:
+            if dept.head:
+                self._clear_hod_flag(dept.head)
+                dept.head = None
+                dept.save()
+                return Response({'detail': 'Department head removed.'})
+        try:
+            new_head = User.objects.get(id=staff_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'Staff not found.'}, status=status.HTTP_404_NOT_FOUND)
+        is_primary = StaffDepartmentAssignment.objects.filter(
             user=new_head,
             department=dept,
             role_in_dept='PRIMARY',
             is_active=True
         ).exists()
-		if not is_primary:
-			return Response(
+        if not is_primary:
+            return Response(
             {'detail': 'Staff must be a primary member of this department.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-		# Clear old head's flag
-		if dept.head and dept.head != new_head:
-			self._clear_hod_flag(dept.head)
-		# Set new head's flag
-		self._set_hod_flag(new_head)
-		dept.head = new_head
-		dept.save()
-		return Response({
+        # Clear old head's flag
+        if dept.head and dept.head != new_head:
+            self._clear_hod_flag(dept.head)
+        # Set new head's flag
+        self._set_hod_flag(new_head)
+        dept.head = new_head
+        dept.save()
+        return Response({
         'detail': 'Department head updated.',
         'head_id': new_head.id,
         'head_name': new_head.full_name,
     })
-	def _clear_hod_flag(self, user):
-		for attr in [
+    def _clear_hod_flag(self, user):
+        for attr in [
         'receptionist_profile', 'hr_profile', 'clinical_counsellor_profile',
         'financial_counsellor_profile', 'endocrinologist_profile', 'gynaec_profile',
         'anesth_profile', 'embryologist_profile', 'nurse_profile',
         'pharmacist_profile', 'technician_profile', 'andrology_technician_profile'
     ]:
-			if hasattr(user, attr):
-				profile = getattr(user, attr)
-				if hasattr(profile, 'is_department_head'):
-					profile.is_department_head = False
-					profile.save()
-					break
-	def _set_hod_flag(self, user):
-		for attr in [
+            if hasattr(user, attr):
+                profile = getattr(user, attr)
+                if hasattr(profile, 'is_department_head'):
+                    profile.is_department_head = False
+                    profile.save()
+                    break
+    def _set_hod_flag(self, user):
+        for attr in [
         'receptionist_profile', 'hr_profile', 'clinical_counsellor_profile',
         'financial_counsellor_profile', 'endocrinologist_profile', 'gynaec_profile',
         'anesth_profile', 'embryologist_profile', 'nurse_profile',
         'pharmacist_profile', 'technician_profile', 'andrology_technician_profile'
-    	]:
-			if hasattr(user, attr):
-				profile = getattr(user, attr)
-				if hasattr(profile, 'is_department_head'):
-					profile.is_department_head = True
-					profile.save()
-					break
+        ]:
+            if hasattr(user, attr):
+                profile = getattr(user, attr)
+                if hasattr(profile, 'is_department_head'):
+                    profile.is_department_head = True
+                    profile.save()
+                    break
+
 

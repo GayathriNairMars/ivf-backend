@@ -13,6 +13,13 @@ from .serializer import (
 	EMRRecordListSerializer,EMRRecordDetailSerializer,EMRRecordCreateSerializer,EMRRecordUpdateSerializer,ConsultationNoteSerializer,DiagnosisSerializer,PrescriptionSerializer,LabResultSerializer,ScanReportSerializer,ProcedureNoteSerializer,TreatmentCycleSerializer,NursingNoteSerializer,PharmacyNoteSerializer,AndrologyNoteSerializer,CounsellingNoteSerializer,MedicalHistoryDocumentSerializer
 )
 from patients.models import PatientProfile
+STATUS_MAP = {
+    "pending": "PEN",
+    "active": "ACT",
+    "on_hold": "HOL",
+    "completed": "COM",
+    "cancelled": "CAN",
+}
 
 #Permissions helper
 
@@ -32,6 +39,42 @@ class PatientEMRViewset(viewsets.ViewSet):
 
 	def get_patient(self,patient_id):
 		return get_object_or_404(PatientProfile,id=patient_id)
+	
+	@action(detail=False, methods=['get'], url_path='dashboard-stats')
+	def dashboard_stats(self, request):
+		total_patients = PatientProfile.objects.count()
+		active_treatments = PatientProfile.objects.filter(status='ACT').count()
+		on_hold = PatientProfile.objects.filter(status='HOL').count()
+		completed = PatientProfile.objects.filter(status='COM').count()
+		pending = PatientProfile.objects.filter(status='PEN').count()
+		cancelled = PatientProfile.objects.filter(status='CAN').count()
+		
+		recent_qs = PatientProfile.objects.select_related('user','assigned_doctor').order_by('-updated_on')[:5]
+		recent_patients = []
+		for p in recent_qs:
+			recent_patients.append({
+				"id": p.id,
+				"patient_id": p.patient_id,
+				"full_name": p.user.full_name if p.user else "",
+				"last_viewed": p.updated_on.isoformat() if p.updated_on else None,
+				"assigned_doctor":p.assigned_doctor.full_name if p.assigned_doctor else None,
+				"doctor_role":p.assigned_doctor.get_role_display() if p.assigned_doctor else None,
+				"status_display":p.get_status_display() 
+			})
+		
+		return Response({
+			"clinic_stats": {
+				"total_patients": total_patients,
+				"active_treatments": active_treatments,
+				"on_hold": on_hold,
+				"completed": completed,
+				"today_visits": 8,
+				"pending": pending,	
+				"cancelled":cancelled		
+			},
+			"recent_patients": recent_patients
+		})
+
 	
 	@action(detail=False, methods=['get'],url_path='patient/(?P<patient_id>[^/.]+)')
 	def patient_summary(self,request,patient_id=None):
@@ -256,3 +299,40 @@ class PatientEMRViewset(viewsets.ViewSet):
 		# Return full updated record
 		record.refresh_from_db()
 		return Response(EMRRecordDetailSerializer(record, context={'request': request}).data)
+	@action(detail=False, methods=['get'], url_path='patients')
+	def patients_by_status(self, request):
+		status_filter = request.query_params.get("status", "all")
+		qs = PatientProfile.objects.select_related(
+	        "user",
+	        "assigned_doctor"
+	  ).order_by("-updated_on")
+		if status_filter != "all":
+			status_code = STATUS_MAP.get(status_filter)
+			if status_code:
+				qs = qs.filter(status=status_code)
+		qs = qs[:20]
+		patients = [{
+			"id": p.id,
+			"patient_id": p.patient_id,
+			"full_name": p.user.full_name if p.user else "",
+			"assigned_doctor": (
+	        p.assigned_doctor.full_name
+	        if p.assigned_doctor else None
+	      ),
+	    "doctor_role": (
+	        p.assigned_doctor.get_role_display()
+	        if p.assigned_doctor else None
+	      ),
+	    "status": p.status,
+	    "status_display": p.get_status_display(),
+	    "last_viewed": (
+	      	p.updated_on.isoformat()
+	        if p.updated_on else None
+	      ),
+	    }
+	    for p in qs
+	  ]
+		return Response({
+	    "count": len(patients),
+	    "patients": patients
+	  })
